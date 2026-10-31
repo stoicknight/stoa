@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    schema: "migrations"
+    queries: "queries"
+    gen:
+      go:
+        package: "dbx"
+        out: "dbx"
+        overrides:
+          - column: "links.target_id"
+            go_type:
+              type: "string"
+              pointer: true

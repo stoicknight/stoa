@@ -1,0 +1,4 @@
+# stoa configuration (copied to ~/.config/stoa/stoa.toml by `stoa init`)
+vault = "/home/you/.stoa/vault"   # where .md files live
+editor = "nvim"                   # CLI args allowed, e.g. "codium -w"
+debug = false

@@ -1,0 +1,6 @@
+bin/
+/stoa
+/result
+*.test
+examples/*.pdf
+examples/*.yaml

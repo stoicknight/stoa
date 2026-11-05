@@ -92,6 +92,9 @@ then it will come back as a Justfile recipe.
 Go tools (goose, sqlc, golangci-lint) are pinned in `go.mod` under `[tool]`;
 no global installs needed.
 
+The current working ledger — repo review findings, prioritized fixes,
+roadmap and a feature backlog — lives in [docs/todo.md](docs/todo.md).
+
 ## Roadmap (not in MVP)
 
 - FTS5 `MATCH` relevance search (sqlc cannot parse fts5's hidden column yet;

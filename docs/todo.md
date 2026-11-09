@@ -270,6 +270,15 @@ written schema
   date") render fine, but `shortDate("2026-01")` returns "2026-01", a
   range is "2026"... acceptable; keep, but comment it or parse to a
   `time.Time` at the boundary instead.
+- `cv.escapeMarkup` escapes **every** `~`, not just leading-position
+  list/heading markers. The leading-marker block (`i == 0` switch over
+  `- + = / ~`) is redundant with the main switch for `~`, so the intent
+  (neutralize leading markers only) is lost and strings like
+  `cost ~100` become `cost \~100`. Typst renders `\~` as `~` so output
+  is correct today (only cosmetic noise in intermediate markup), but
+  fix before the escape rules grow: make the leading switch use its own
+  escaping call that does not run the general pass (or drop `~` from the
+  main switch), and pin either behavior in `TestInline`.
 
 ---
 

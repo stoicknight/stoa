@@ -286,6 +286,13 @@ func TestInline(t *testing.T) {
 		{"leading equals", "= note", `\= note`},
 		{"ampersand literal", "R&D", "R&D"},
 		{"mailto url escaping", `[mail](mailto:a@b.c)`, `#link("mailto:a@b.c")[mail]`},
+		{"code", "built with `Go 1.23`", `built with #raw("Go 1.23")`},
+		{"code markup-safe inside", "see `slice[0]` here", `see #raw("slice[0]") here`},
+		{"code keeps stars literal", "`*not emph*`", `#raw("*not emph*")`},
+		{"bold with code inside", "**Uses `Go` daily**", `#strong[Uses #raw("Go") daily]`},
+		{"code after link", "[Site](https://x.io) with `code`", `#link("https://x.io")[Site] with #raw("code")`},
+		{"unmatched backtick", "cost ~100` each", "cost \\~100\\` each"},
+		{"non-greedy pair", "a `b` c `d` e", `a #raw("b") c #raw("d") e`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

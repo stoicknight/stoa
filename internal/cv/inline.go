@@ -3,10 +3,10 @@ package cv
 import "strings"
 
 // inline converts restricted markdown inline markup to Typst markup:
-// **strong** → #strong[...], *emphasis* → _..._, [text](url) → #link(...).
-// Everything else is escaped so Typst renders it literally. Nesting is
-// deliberately unsupported (no bold inside links etc.) to keep the
-// converter small and predictable.
+// **strong** → #strong[...], *emphasis* → _..._, `code` → #raw("...")
+// and [text](url) → #link(...). Everything else is escaped so Typst
+// renders it literally. Nesting is deliberately unsupported (no
+// bold inside links etc.) to keep the converter small and predictable;
 func inline(s string) string {
 	var b strings.Builder
 	rest := s
@@ -45,21 +45,41 @@ func cutLink(s string) (prefix, text, url, after string, ok bool) {
 	return s[:start], s[start+1 : mid], s[mid+2 : end], s[end+1:], true
 }
 
-// bold splits on **strong** spans, then handles *emphasis* in the rest.
+// bold splits on **strong** spans, then handles `code` and *emphasis*
+// in the rest.
 func bold(s string) string {
 	i := strings.Index(s, "**")
 	if i < 0 {
-		return emph(s)
+		return code(s)
 	}
 	j := strings.Index(s[i+2:], "**")
 	if j < 0 { // unmatched: keep as literal text
-		return escapeMarkup(s[:i+2]) + emph(s[i+2:])
+		return escapeMarkup(s[:i+2]) + code(s[i+2:])
 	}
 	inner := s[i+2 : i+2+j]
-	return escapeMarkup(s[:i]) + "#strong[" + escapeMarkup(inner) + "]" + bold(s[i+2+j+2:])
+	return escapeMarkup(s[:i]) + "#strong[" + code(inner) + "]" + bold(s[i+2+j+2:])
 }
 
-// emph splits on *emphasis* spans in text that has no bold left.
+// code splits on `inline code` spans (checked after bold, so a span
+// between ** markers is treated as bold). Code contents become
+// #raw("..."): string-escaped, not markup-escaped, so characters like
+// * and _ render literally. Text without code falls through to emph.
+// The span is non-greedy: a lone backtick stays literal.
+func code(s string) string {
+	i := strings.IndexByte(s, '`')
+	if i < 0 {
+		return emph(s)
+	}
+	j := strings.IndexByte(s[i+1:], '`')
+	if j < 0 { // unmatched: keep as literal text
+		return emph(s[:i]) + "\\`" + code(s[i+1:])
+	}
+	inner := s[i+1 : i+1+j]
+	return emph(s[:i]) + "#raw(\"" + escapeString(inner) + "\")" + code(s[i+j+2:])
+}
+
+// emph splits on *emphasis* spans in text that has no bold or code
+// left.
 func emph(s string) string {
 	i := strings.Index(s, "*")
 	if i < 0 {

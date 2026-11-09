@@ -206,11 +206,21 @@ assume
   silently clobber; cheap `os.OpenFile(O_EXCL)` rename-guard makes intent
   explicit.
 
+### 17. No `version` command / `--version` flag
+- `stoa --version` (and `stoa version`) treat it as a command-miss and
+  print the full usage with exit 1 — users can't tell which local build
+  they have, and bug reports lose the single most useful datum.
+- **Fix:** add `stoa version` as a first-class command (also accept
+  `--version` as an alias before arg routing). Print module version from
+  `runtime/debug.ReadBuildInfo()` so it stays in lockstep with the git
+  tag with zero manual bookkeeping (see the note in the roadmap, item 19).
+  Bounded spec: `docs/specs/version-command.md`.
+
 ---
 
 ## P2 — simplification, needless abstraction, idioms
 
-### 17. koanf stack for three keys
+### 18. koanf stack for three keys
 - `Config` has 3 fields but the config layer pulls in koanv + TOML
   parser + providers (five imports). A ~40-line hand-rolled TOML-flat
   read/write (you already wrote the same thing twice: `frontmatter` and
@@ -220,12 +230,12 @@ assume
   use. Also `_ = k.Unmarshal(...)` silently swallows malformed values —
   surface those.
 
-### 18. `failf` is `fmt.Errorf` with a defined name and no added semantics
+### 19. `failf` is `fmt.Errorf` with a defined name and no added semantics
 - Either inline it (`fmt.Errorf`) or make it meaningful (e.g. mark user
   errors so main prints them without the usage banner). Right now it
   reads as an abstraction with zero payoff.
 
-### 19. Command boilerplate is copy-pasted 11 times
+### 20. Command boilerplate is copy-pasted 11 times
 - Every command does: `fsBase` → parse → `loadConfig` → `openStore` →
   resolve ref → `GetNoteByID` → `defer st.Close`. Extract
   `- one `withStore(cfg, func(ctx, st, vault) error) error` helper
@@ -234,16 +244,16 @@ assume
   The diff shrinks every command file by 30–40% and gives #6's tests one
   seam.
 
-### 20. Serial duplicate of frontmatter parsing in `cv` / duplicated
+### 21. Serial duplicate of frontmatter parsing in `cv` / duplicated
 `parseFrontmatter`
 - `internal/cv` re-implements flat frontmatter parsing with richer
   errors and `baseLine`; justified, but its README comment ("mirrors
   internal/frontmatter's philosophy") means it's the second restricted
   parser — when the CV schema grows, consider a shared
   `internal/flatyaml`-ish helper both call. Not urgent; only if a third
-  parser appears (the config work in #17 would be it).
+  parser appears (the config work in #18 would be it).
 
-### 21. `cli/gen.go` — repeated `schemaFor` vs `Compile`'s internally
+### 22. `cli/gen.go` — repeated `schemaFor` vs `Compile`'s internally
 written schema
 - One-shot mode: engine writes the YAML (`Renderer.Compile` does it for
   you). Watch mode: `schemaFor` writes it. Two write paths, same artifact;
@@ -252,15 +262,15 @@ written schema
   honest but could just be a comment in `fsBase("gen")` until a second
   format exists.
 
-### 22. `store.Open` global goose state
+### 23. `store.Open` global goose state
 - `goose.SetBaseFS` / `SetDialect` are process-global with no mutex and
   would misbehave in a server context (fine for a CLI, but wrap in one
   `sync.Once` or init-time call if you ever reuse `store` from a long
   process, e.g. a watch/LSP-mode side-car).
 
-### 23. Small idiom nits
+### 24. Small idiom nits
 - `internal/cli/rm.go` anonymous `struct{ id, path string }` — a named
-  `refTarget` type reads better and admits the helper in #19.
+  `refTarget` type reads better and admits the helper in #20.
 - `internal/store/store.go` `Open` ignores ctx for migrations error text;
   wrap as `goose: migrate: %w` consistently across all error paths.
 - `internal/cli/cli.go` hardcodes the `col = 32` usage width; could be
@@ -284,7 +294,7 @@ written schema
 
 ## P3 — docs
 
-### 24. README drift and gaps
+### 25. README drift and gaps
 - `stoa new ...` — README says "create + open `$EDITOR`" but it uses
   `config.editor` (`$EDITOR` only as default). One word, worth fixing:
   docs are the first thing a new user reads.
@@ -320,9 +330,9 @@ afternoon-sized chunks.
    migration 2 for the CHECK + collect/FTS decision. Test: vault with a
    cv note still reindexes.
 5. `gen`: real flag `Changed()` exclusivity + clean renderer selection
-   (#5, fold in #21 simplifications).
+   (#5, fold in #22 simplifications).
 6. `rm`: collision-safe trash names, partial-failure reporting (#9).
-7. Unify command scaffolding (#19) — mechanical refactor unlocking tests.
+7. Unify command scaffolding (#20) — mechanical refactor unlocking tests.
 8. CLI test battery (#6): per-command table-driven tests against temp
    vaults.
 
@@ -354,10 +364,18 @@ afternoon-sized chunks.
 ## Phase 4 — polish
 16. `just release` (goreleaser or a pinned go build + checksums), and
     CI on GitHub Actions running `just check`.
-17. Config simplification (#17) if it still bothers you post-#8.
+17. Config simplification (#18) if it still bothers you post-#8.
 18. Theme/template docs: a short `examples/custom-template.md` walking
     the schema (the YAML artifact makes this genuinely easy to document
     with before/after snippets).
+19. `stoa version` / `--version` (#17, spec:
+    `docs/specs/version-command.md`): read `runtime/debug.BuildInfo`
+    (no `-ldflags` version stamping). For `go install ...@v0.x.y` builds
+    `Main.Version` is the tag itself, so the binary reports exactly what
+    was installed — the git tag is the single source of truth and no
+    drift is possible. Local builds report `(devel)` plus the
+    `vcs.revision`/`vcs.time`/`vcs.modified` stamps; print those as
+    fallback. Test: snapshot each mode.
 
 ---
 

@@ -1,4 +1,5 @@
-# stoa configuration (copied to ~/.config/stoa/stoa.toml by `stoa init`)
+# stoa config reference — the real file lives at ~/.config/stoa/stoa.toml;
+# `stoa init` writes a default one. Prefer `stoa config key value` for edits.
 vault = "/home/you/.stoa/vault"   # where .md files live
 editor = "nvim"                   # CLI args allowed, e.g. "codium -w"
 debug = false

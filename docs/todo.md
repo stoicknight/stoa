@@ -9,24 +9,29 @@ robustness, missing tests, sharp edges, **P2** = simplification /
 deduplication / idiom, **P3** = docs & polish. After the findings there is
 a suggested roadmap and a feature-idea backlog.
 
+Active findings keep their original numbers even as neighbors are
+completed, so references from code, specs and commits stay stable.
+
+---
+
+## Completed
+
+Work from this ledger that is done. Details live in the commit message
+and the referenced code/docs; dates are when the fix landed.
+
+| date | finding | commit | details |
+|---|---|---|---|
+| 2026-11-12 | #5 `gen --theme`/`--template` conflict — fixed by redesign: one `--theme` flag (built-in name or `.typ` file), explicit template contract, default theme `classic` | `2471421` | [ADD-0002](decisions/ADD-0002-cv-theme-template.md), [docs/reference/cv-template.md](reference/cv-template.md) |
+| 2026-11-12 | #1 foreign keys were off → orphaned rows poisoned the index (no sweep migration needed: no pre-fix vaults exist, see ADD-0003) | `81e8fba` | `internal/store/store_test.go`, `internal/index/index_test.go`, [ADD-0003](decisions/ADD-0003-sqlite-index-store.md) |
+| 2026-11-12 | #23 goose global-state race — migration block mutexed; `just check` now runs `-race` | `81e8fba`, `8404e7c` | `internal/store/store.go`, `Justfile` |
+| 2026-11-12 | #25 (partial) `$EDITOR` wording (`new`/`edit`), `stoa.example.toml` header truth | `ccb8ac8` | `README.md`, `internal/cli/cli.go`, `stoa.example.toml` |
+| 2026-11-12 | #25 (partial) docs drift pass: config precedence + defaults, `<ref>` resolution semantics, `.trash` wording, Development section | this pass | `README.md` |
+| 2026-11-12 | #26 ADD convention resolved — `docs/decisions/README.md` index (option a) | this pass | [docs/decisions/README.md](decisions/README.md) |
+| 2026-11-12 | roadmap item 18 (theme/template doc) — superseded by the template contract doc | `2471421` | [docs/reference/cv-template.md](reference/cv-template.md) |
+
 ---
 
 ## P0 — correctness bugs (fix first)
-
-### 1. Foreign keys are off → orphaned rows poison the index
-- **Where:** `internal/store/store.go:32` (Open DSN)
-- The DSN sets `busy_timeout` and `journal_mode` but **not**
-  `foreign_keys`. Verified: SQLite defaults `foreign_keys = 0` and the
-  modernc driver does not change that, so every
-  `REFERENCES ... ON DELETE CASCADE` in `00001_init.sql` is dead text.
-- Consequence: `index.pruneOrphans` deletes a note row, but its `tags`
-  rows (and stale `links` rows on source_id/target_id) silently remain.
-  `ListNotesByTag` joins notes so output hides it, but the DB carries
-  garbage and the tag filter's counts/dedup assumptions break down the
-  line.
-- **Fix:** add `&_pragma=foreign_keys(1)` to the DSN in `store.Open`.
-  One-line fix, validate by extending `index_test` with a
-  "prune leaves no tag rows" assertion.
 
 ### 2. `resolveQuery` can only ever see the 10 newest notes
 - **Where:** `internal/cli/resolve.go:45` (`candidates`)
@@ -59,7 +64,7 @@ a suggested roadmap and a feature-idea backlog.
 
 ### 4. A CV note inside the vault bricks `reindex` (and the tags CHECK)
 - **Where:** `internal/index/collect` + `internal/domain.ParseNoteType` +
-  migration `CHECK (type IN ('note','journal','doc'))`
+  migration 1's `CHECK (type IN ('note','journal','doc'))`
 - `stoa gen` explicitly works on "any markdown file", and
   `examples/cv-example.md` carries `type: cv`. `stoa new` cannot create
   cv notes, but users *will* drop CV notes into the vault (it's a notes
@@ -67,28 +72,11 @@ a suggested roadmap and a feature-idea backlog.
   `unknown note type "cv"`, so tags/search/list go dead until the file is
   removed by hand.
 - **Fix:** decide the policy explicitly. Minimal: allow `type: cv` end to
-  end — add CV to `NoteType` (with `Folder()`), widen the migration
-  CHECK in a new migration (migration 2: `ALTER`/rebuild, or just accept
-  the CHECK is advisory and drop it in migration 2), skip cv files in
-  FTS indexing or index them like notes. Zero-code fallback: document
+  end — add CV to `NoteType` (with `Folder()`), widen the CHECK in
+  migration 1 (pre-1.0: the baseline may move, see ADD-0003), skip cv
+  files in FTS indexing or index them like notes. Zero-code fallback: document
   loudly that gen files must live outside the vault — but validation
   errors on arrival beat doc-only fixes.
-
-### 5. `gen --theme modern --template x` silently ignores the conflict
-- **Where:** `internal/cli/gen.go:41`
-- The exclusivity check is `if *theme != "modern" && *templatePath != ""`.
-  Passing the *default* theme plus a template slips through and renders
-  with the template with no warning; passing any other theme errors.
-  Two different behaviors for the same user mistake.
-- **Fix:** compute the error from whether the flags were *explicitly
-  set* (`fs.Changed("theme") && fs.Changed("template")`), then pick the
-  renderer with a plain if/else:
-  ```go
-  var r *cv.Renderer
-  if *templatePath != "" { r, err = cv.NewRenderer(*templatePath) } else { r, err = cv.NewTheme(*theme) }
-  ```
-  (also removes the current awkward "construct, maybe overwrite, then
-  check error" double-assignment).
 
 ---
 
@@ -111,8 +99,9 @@ a suggested roadmap and a feature-idea backlog.
 ### 7. `domain`, `store`, `markdown` (parts), `cv` helpers lack tests
 - `domain.ParseNoteType`/`Folder` — perfect table-driven target, zero
   tests, package currently shows `[no test files]`.
-- `store.Open` — no test even with a migrated in-tmp-dir DB (migration
-  application + WAL/hashing behavior untested end-to-end).
+- ~~`store.Open`~~ — covered since the foreign-keys fix
+  (`internal/store/store_test.go`: migration application, FK pragma,
+  error paths; committed `81e8fba`).
 - `frontmatter` — no test for CRLF files (`\r` handling survives via
   TrimSpace but isn't pinned), title containing `:` or `\n` (a `\n` in a
   title renders a *broken multi-line frontmatter*), tags list containing
@@ -213,7 +202,7 @@ assume
 - **Fix:** add `stoa version` as a first-class command (also accept
   `--version` as an alias before arg routing). Print module version from
   `runtime/debug.ReadBuildInfo()` so it stays in lockstep with the git
-  tag with zero manual bookkeeping (see the note in the roadmap, item 19).
+  tag with zero manual bookkeeping (see the roadmap, Phase 4 item 16).
   Bounded spec: `docs/specs/version-command.md`.
 
 ---
@@ -262,12 +251,6 @@ written schema
   honest but could just be a comment in `fsBase("gen")` until a second
   format exists.
 
-### 23. `store.Open` global goose state
-- `goose.SetBaseFS` / `SetDialect` are process-global with no mutex and
-  would misbehave in a server context (fine for a CLI, but wrap in one
-  `sync.Once` or init-time call if you ever reuse `store` from a long
-  process, e.g. a watch/LSP-mode side-car).
-
 ### 24. Small idiom nits
 - `internal/cli/rm.go` anonymous `struct{ id, path string }` — a named
   `refTarget` type reads better and admits the helper in #20.
@@ -289,28 +272,84 @@ written schema
   fix before the escape rules grow: make the leading switch use its own
   escaping call that does not run the general pass (or drop `~` from the
   main switch), and pin either behavior in `TestInline`.
+- `cv.escapeMarkup` escapes **every** `~`, not just leading-position
+  list/heading markers. The leading-marker block (`i == 0` switch over
+  `- + = / ~`) is redundant with the main switch for `~`, so the intent
+  (neutralize leading markers only) is lost and strings like
+  `cost ~100` become `cost \~100`. Typst renders `\~` as `~` so output
+  is correct today (only cosmetic noise in intermediate markup), but
+  fix before the escape rules grow: make the leading switch use its own
+  escaping call that does not run the general pass (or drop `~` from the
+  main switch), and pin either behavior in `TestInline`.
 
 ---
 
 ## P3 — docs
 
-### 25. README drift and gaps
-- `stoa new ...` — README says "create + open `$EDITOR`" but it uses
-  `config.editor` (`$EDITOR` only as default). One word, worth fixing:
-  docs are the first thing a new user reads.
+### 25. README drift and gaps (partially fixed — see Completed)
 - Document that gen/CV files may live **outside** the vault (or fix #4
   and reverse this).
-- `stoa rm` docs: nothing about `.trash` naming or `--purge`
-  irrecoverable; a sentence prevents surprise.
+- `stoa rm` docs: nothing about `.trash` naming collisions (todo #9) or
+  `--purge` irrecoverable; the Layout comment now covers `--purge`, a
+  collision note should follow the #9 fix.
 - `stoa search` README says "substring search (titles, tags, bodies)" —
-  correct; consider a note that it's sub-case-insensitive LIKE under the
+  correct; consider a note that it's case-insensitive LIKE under the
   hood with FTS5 MATCH planned.
-- `stoa.example.toml` duplicates the header comment `< ~/.config/stoa/...`
-  but there's no copy mechanism; either `stoa init` prints the path for
-  that file (it does print it — good) and the example file notes that
-  `stoa config key value` is the safer write path.
 - Roadmap section: fine as-is; suggestions for the public roadmap live
   below ("Feature ideas").
+
+### 26. Formalize the ADD convention — resolved
+
+Option (a): `docs/decisions/README.md` is the index (one line per ADD:
+id, title, status, links). The per-file format stays as established by
+ADD-0001: bold-key header, status first, terse bullets — no MADR
+frontmatter unless an agent misreads the format.
+
+### 27. Vault layout + `init` rework (user-flagged, spec drafted)
+
+User flagged the vault layout on 2026-11-12: the default
+`~/.stoa/vault/.stoa/` double-naming and implicit init location.
+Decided: default vault root is **pwd** (refuse `$HOME`), init takes an
+explicit path (exists+dir → adopt, exists+file → error, missing →
+create), `.stoa/` stays the reserved per-vault namespace (Obsidian
+`.obsidian` pattern; currently only `index.db`), config stays in
+`~/.config/stoa/`, no implicit vault anymore, `STOA_VAULT` is runtime-
+only (Model A). Draft spec: `docs/specs/vault-init.md` — awaiting
+approval.
+
+### 28. Multi-vault registry + vault targeting (parked — CRITICAL, blocks future design)
+
+**Priority: critical.** These decisions shape how every command finds
+its vault and how agents drive stoa; decide before more surface grows.
+The `gh` analogy (user): each vault ≈ a repo — but vaults have no
+remote URL; they self-identify via the `.stoa/` marker, so walk-up
+discovery from pwd (git-style) is a live option alongside registry +
+explicit targeting. Open questions (all user decisions): registry
+schema (`[vaults.list]`, basename names), the `default` pointer (CLI
+meaning of Obsidian's `open: true`), switching UX (`stoa use` vs
+`stoa config`) with agent ergonomics first-class (`--vault <name|path>`,
+`STOA_VAULT` name-or-path — keep, per spec A §4), init on an
+already-registered vault (re-default or leave), future `.stoa/`
+contents. Full context: "Deferred decisions" in
+`docs/specs/vault-init.md`. Do not implement until designed.
+
+Blocked by/related to #27. Open questions, **user's decisions all**:
+- Registry in `~/.config/stoa/stoa.toml` (`[vaults.list]` + `default`
+  pointer); vault names = folder basename (decided); collisions →
+  error listing paths.
+- Whether `default` (Obsidian's `open: true`) is the right concept for
+  a CLI — proposed reading: "the default when nothing else specifies",
+  not exclusive. Not yet confirmed.
+- How vault switching works (`stoa use` vs `stoa config`), with agent
+  ergonomics as a first-class concern (agents retarget vaults
+  frequently; `--vault <name|path>` flag and `STOA_VAULT` env both
+  feed this; env var fate — keep with name-or-path semantics is the
+  current lean — undecided).
+- `stoa init` on an already-registered vault: re-default or leave
+  untouched (Obsidian switches; undecided).
+- Future `.stoa/` contents (templates etc.) — decided to keep the
+  namespace reserved; contents still open.
+Do not implement until the design is approved.
 
 ---
 
@@ -320,54 +359,61 @@ Ordered so each step is shippable on its own; group sizes assume
 afternoon-sized chunks.
 
 ## Phase 1 — harden the core (P0 + core P1)
-1. `store`: add `foreign_keys(1)` DSN pragma. Test: prune drops tag/links
-   rows (#1).
-2. SQL-backed `CandidateNotes` + rewrite `candidates` (#2). Tests:
+1. SQL-backed `CandidateNotes` + rewrite `candidates` (#2). Tests:
    out-of-top-10 resolution, prefix ties, ambiguity message limit.
-3. `link`: keep frontmatter verbatim (targeted body splice) or
+2. `link`: keep frontmatter verbatim (targeted body splice) or
    round-trip-preserving renderer (#3, #15). Test: unknown keys survive.
-4. Policy + plumbing for `type: cv` inside the vault (#4): domain entry +
-   migration 2 for the CHECK + collect/FTS decision. Test: vault with a
+3. Policy + plumbing for `type: cv` inside the vault (#4): domain entry +
+   migration (CHECK widening) + collect/FTS decision. Test: vault with a
    cv note still reindexes.
-5. `gen`: real flag `Changed()` exclusivity + clean renderer selection
-   (#5, fold in #22 simplifications).
-6. `rm`: collision-safe trash names, partial-failure reporting (#9).
-7. Unify command scaffolding (#20) — mechanical refactor unlocking tests.
-8. CLI test battery (#6): per-command table-driven tests against temp
+4. `rm`: collision-safe trash names, partial-failure reporting (#9).
+5. Unify command scaffolding (#20) — mechanical refactor unlocking tests.
+6. CLI test battery (#6): per-command table-driven tests against temp
    vaults.
 
 ## Phase 2 — quality of search and index
-9. Reindex in a single transaction; detect duplicate ids in `collect`
+7. Reindex in a single transaction; detect duplicate ids in `collect`
  (#11, #12).
-10. Address `maxList` cap visibility (#10); add `doctor`-style report of
+8. Address `maxList` cap visibility (#10); add `doctor`-style report of
     warnings (dangling links count, skipped files) to `reindex` output.
-11. Search (pre-FTS5): `--limit`, escape wildcards, order by created,
+9. Search (pre-FTS5): `--limit`, escape wildcards, order by created,
     truncate notice (#8); rename `sanitizeFTS`.
-12. Frontmatter edge cases test battery (#7): CRLF, BOM, `:` in title,
+10. Frontmatter edge cases test battery (#7): CRLF, BOM, `:` in title,
     `[]` tag, `#` normalization in tags between `new` and `reindex`
     (pick one path and document it).
 
 ## Phase 3 — the planned big rocks (already on README roadmap)
-13. **FTS5 MATCH**: sqlc can't parse the hidden column — sidestep with a
+11. **FTS5 MATCH**: sqlc can't parse the hidden column — sidestep with a
     hand-written `QueryContext` method in `internal/store` beside dbx or
     a `queries_raw.go` with `// sqlc:skip`. Ship `stoa search` (ranked)
     behind it; keep old behavior as `--substring`.
-14. **LLM adapter**: plain interface (`Summarizer`), an OpenAI-compatible
+12. **LLM adapter**: plain interface (`Summarizer`), an OpenAI-compatible
     adapter behind it, and features on top: `stoa summarize <ref>` plus
     auto-link suggestions (`stoa suggest <ref>` → proposed `[[links]]`
     for review). This is exactly what the two-place link design (file +
     typed DB rows) was built for.
-15. **Sync / import**: `stoa import <dir>` bulk-imports and reports
+13. **Sync / import**: `stoa import <dir>` bulk-imports and reports
     frontmatter errors per file instead of failing the walk (feed
     findings back into #12's error UX).
 
+Phase 3.5 — agent-facing features (from docs/reference/agent-friendly-cli/):
+see the review doc's §4 for the list (JSON output, error hints, truncation
+reporting, discovery commands, skill file). Note: DuckDB was evaluated and
+rejected as an engine — [ADD-0001](decisions/ADD-0001-duckdb-not-adopted.md);
+only the agent-mode *ideas* carry over (portable to SQLite at zero cost).
+
 ## Phase 4 — polish
-16. `just release` (goreleaser or a pinned go build + checksums), and
+14. `just release` (goreleaser or a pinned go build + checksums), and
     CI on GitHub Actions running `just check`.
-17. Config simplification (#18) if it still bothers you post-#8.
-18. Theme/template docs: a short `examples/custom-template.md` walking
-    the schema (the YAML artifact makes this genuinely easy to document
-    with before/after snippets).
+15. Config simplification (#18) if it still bothers you post-#8.
+16. `stoa version` / `--version` (#17, spec:
+    `docs/specs/version-command.md`): read `runtime/debug.BuildInfo`
+    (no `-ldflags` version stamping). For `go install ...@v0.x.y` builds
+    `Main.Version` is the tag itself, so the binary reports exactly what
+    was installed — the git tag is the single source of truth and no
+    drift is possible. Local builds report `(devel)` plus the
+    `vcs.revision`/`vcs.time`/`vcs.modified` stamps; print those as
+    fallback. Test: snapshot each mode.
 19. `stoa version` / `--version` (#17, spec:
     `docs/specs/version-command.md`): read `runtime/debug.BuildInfo`
     (no `-ldflags` version stamping). For `go install ...@v0.x.y` builds
@@ -392,7 +438,7 @@ of truth; DB is disposable".
 | 4 | **`stoa journal` / `stoa daily`** | Opens (idempotently creates) today's journal note, appending to it rather than creating a new file per invocation. This turns the journal type from "just another folder" into a routine. |
 | 5 | **`stoa links <ref>`** (outgoing) | Symmetric with backlinks; the sqlc query already exists (`GetLinksForNote` is dead-in-the-water code right now). Also show `kind` and unresolved targets. |
 | 6 | **`stoa doctor`** | Read-only vault health: files missing frontmatter, duplicate ids, unknown types, unresolved wikilinks report, stale `updated` fields. Turns #10/#12's silent failure classes into a first-class, user-friendly surface. |
-| 7 | **`--json` on `list`/`search`/`show`** | Plain scriptability; the schema is already flat and typed. |
+| 7 | **`--json` on `list`/`search`/`show`** | Plain scriptability; the schema is already flat and typed. Concrete patterns for this (formatter indirection, NDJSON, `_meta` truncation) are in `docs/reference/agent-friendly-cli/examples.md`, decisions in [review.md](reference/agent-friendly-cli/review.md). |
 | 8 | **`stoa version`** | Trivial, but missing; go-install users currently have no way to check. |
 | 9 | **Templates for `stoa new`** | `stoa new doc --template meeting.md` — a `templates/` folder in the vault, with `{{title}}`-style placeholder substitution. Consistent with "plain files, no magic". |
 | 10 | **`stoa config set vault --test/--verify`** | After `config vault <path>` validates that path is a directory; safer `init`-adjacent UX. |

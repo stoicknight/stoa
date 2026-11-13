@@ -28,8 +28,7 @@ func runGen(args []string) error {
 	fs := fsBase("gen")
 	outPath := fs.StringP("out", "o", "", "output PDF path (default: next to the input file)")
 	pdf := fs.Bool("pdf", false, "output format; PDF is currently the only one (and the default)")
-	templatePath := fs.String("template", "", "custom Typst template (.typ); overrides --theme")
-	theme := fs.String("theme", "modern", "built-in theme: modern | classic | minimalist")
+	theme := fs.String("theme", "classic", "built-in theme (classic | modern | minimalist) or a custom .typ template")
 	watch := fs.Bool("watch", false, "re-render when the input file changes")
 	_ = pdf // future formats branch on this; pdf is the only one today
 	if err := fs.Parse(args); err != nil {
@@ -37,10 +36,7 @@ func runGen(args []string) error {
 	}
 	rest := fs.Args()
 	if len(rest) != 1 {
-		return failf("usage: stoa gen <file.md> [--pdf] [-o out] [--theme name] [--template path] [--watch]")
-	}
-	if *theme != "modern" && *templatePath != "" {
-		return failf("gen: --theme and --template are mutually exclusive")
+		return failf("usage: stoa gen <file.md> [--pdf] [-o out] [--theme name|.typ] [--watch]")
 	}
 	input := rest[0]
 
@@ -63,9 +59,6 @@ func runGen(args []string) error {
 	}
 
 	r, err := cv.NewTheme(*theme)
-	if *templatePath != "" {
-		r, err = cv.NewRenderer(*templatePath)
-	}
 	if err != nil {
 		return err
 	}

@@ -29,8 +29,8 @@ var modernTemplate string
 // reimplement rendercv 0.3.0's classic and engineeringresumes looks
 // against stoa's data.yaml schema; minimalist is stoa's own design.
 var themes = map[string]string{
-	"modern":     modernTemplate, // default
-	"classic":    classicTemplate,
+	"classic":    classicTemplate, // default
+	"modern":     modernTemplate,
 	"minimalist": minimalistTemplate,
 }
 
@@ -53,30 +53,35 @@ type Renderer struct {
 	typst    string
 	tmplFile string
 	dataFile string
+	src      string // template origin: user path or built-in theme label
 }
 
-// NewRenderer sets up the workspace with a user-provided .typ file — the
-// escape hatch for full control over the layout.
-func NewRenderer(templatePath string) (*Renderer, error) {
-	raw, err := os.ReadFile(templatePath)
+// NewTheme sets up the workspace with the given look. spec is either a
+// built-in theme name (classic | modern | minimalist) or the path to a
+// user-provided .typ file — the escape hatch for full control over the
+// layout (see docs/reference/cv-template.md for the template contract).
+func NewTheme(spec string) (*Renderer, error) {
+	if tmpl, ok := themes[spec]; ok {
+		return newWorkspace([]byte(tmpl), fmt.Sprintf("built-in theme %q", spec))
+	}
+	if !strings.HasSuffix(spec, ".typ") {
+		return nil, fmt.Errorf("unknown theme %q (valid themes: %s — or pass a .typ file)", spec, strings.Join(themeNames(), ", "))
+	}
+	raw, err := os.ReadFile(spec)
 	if err != nil {
-		return nil, fmt.Errorf("read template %s: %w", templatePath, err)
+		return nil, fmt.Errorf("read template %s: %w", spec, err)
 	}
-	return newWorkspace(raw)
-}
-
-// NewTheme sets up the workspace with a built-in theme template.
-func NewTheme(name string) (*Renderer, error) {
-	tmpl, ok := themes[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown theme %q (valid themes: %s)", name, strings.Join(themeNames(), ", "))
-	}
-	return newWorkspace([]byte(tmpl))
+	return newWorkspace(raw, spec)
 }
 
 // newWorkspace creates the temp directory, checks for a typst binary
-// (with an install hint), and writes the template into it.
-func newWorkspace(tmpl []byte) (*Renderer, error) {
+// (with an install hint), validates the template against the stoa CV
+// contract, and writes the template into it. src labels the template's
+// origin (user path or built-in theme) in typst diagnostics.
+func newWorkspace(tmpl []byte, src string) (*Renderer, error) {
+	if err := validateTemplate(tmpl); err != nil {
+		return nil, err
+	}
 	typst, err := exec.LookPath("typst")
 	if err != nil {
 		return nil, missingTypst()
@@ -90,12 +95,26 @@ func newWorkspace(tmpl []byte) (*Renderer, error) {
 		typst:    typst,
 		tmplFile: filepath.Join(tmp, "cv.typ"),
 		dataFile: filepath.Join(tmp, "data.yaml"),
+		src:      src,
 	}
 	if err := os.WriteFile(r.tmplFile, tmpl, 0o600); err != nil {
 		_ = os.RemoveAll(tmp) // best-effort cleanup
 		return nil, fmt.Errorf("write template: %w", err)
 	}
 	return r, nil
+}
+
+// validateTemplate fails fast on templates that would compile clean but
+// silently render an empty document: the stoa CV contract requires the
+// template to load the schema itself via yaml("data.yaml").
+func validateTemplate(tmpl []byte) error {
+	if len(strings.TrimSpace(string(tmpl))) == 0 {
+		return errors.New("template is empty")
+	}
+	if !strings.Contains(string(tmpl), "data.yaml") {
+		return errors.New(`template never reads data.yaml — a stoa CV template must load the schema, e.g.: #let data = yaml("data.yaml") (see docs/reference/cv-template.md)`)
+	}
+	return nil
 }
 
 // Close removes the temporary workspace.
@@ -128,7 +147,9 @@ func (r *Renderer) Compile(ctx context.Context, c *CV, out string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("typst compile: %w\n%s", err, trimFontWarnings(stderr.String()))
+		// typst diagnostics cite the workspace copy; relabel so the user
+		// sees their own file (or the theme name) instead of a temp path
+		return fmt.Errorf("typst compile: %w\n%s", err, relabel(trimFontWarnings(stderr.String()), r))
 	}
 	schema := SchemaPath(out)
 	if err := os.WriteFile(schema, []byte(c.YAML()), 0o600); err != nil {
@@ -145,8 +166,11 @@ func (r *Renderer) Watch(ctx context.Context, out string) error {
 	cmd.Stderr = pw
 	go func() {
 		defer func() { _ = pr.Close() }()
-		drop := dropFontWarnings(pr)
-		if _, err := io.Copy(os.Stderr, drop); err != nil && ctx.Err() == nil {
+		sc := bufio.NewScanner(dropFontWarnings(pr))
+		for sc.Scan() {
+			fmt.Fprintln(os.Stderr, relabel(sc.Text(), r))
+		}
+		if err := sc.Err(); err != nil && ctx.Err() == nil {
 			fmt.Fprintln(os.Stderr, "stoa:", err)
 		}
 		_ = pw.Close()
@@ -195,6 +219,13 @@ func dropFontWarnings(r io.Reader) io.Reader {
 		}
 	}()
 	return pr
+}
+
+// relabel replaces the temp workspace path in typst output with the
+// template's origin (user path or built-in theme label), so diagnostics
+// point at a file the user can actually find.
+func relabel(out string, r *Renderer) string {
+	return strings.ReplaceAll(out, r.tmplFile, r.src)
 }
 
 // missingTypst returns an actionable install hint: a pacman command on

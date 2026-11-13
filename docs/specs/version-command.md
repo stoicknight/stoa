@@ -1,6 +1,13 @@
 # Spec: `stoa version` / `--version` (todo #17)
 
-Status: draft — awaiting approval.
+Status: revised — review decisions incorporated, awaiting final go-ahead.
+
+## Resolved design decisions (review 2026-11-12)
+
+1. Output follows the `gh version` multi-line layout, fixed at **2 lines**
+   (line 1: version info; line 2: a URL).
+2. Devel builds include the build timestamp **and** the short commit
+   hash in line 1's parenthetical, as in the original example.
 
 ## Goal
 
@@ -28,13 +35,42 @@ New `internal/cli/version.go`:
 func versionString(bi *debug.BuildInfo) string
 ```
 
-- Tagged build (`"vX.Y.Z"` + no local mods): `stoa vX.Y.Z`
-- Tagged with dirty tree (`vcs.modified`): `stoa vX.Y.Z+dirty`
-- Local build: `stoa (devel) (commit 1a2b3c4, built 2025-06-01 10:00:12 UTC, modified)`,
-  omitting `built`/`modified` clauses when the corresponding stamps are
-  absent (e.g. binary built outside a git checkout → just `stoa (devel)`)
-- `bi == nil` → `stoa (unknown)` (defensive; ReadBuildInfo practically
-  never returns nil)
+Every output is exactly two lines, `gh version`-style: line 1 is the
+version information, line 2 is a URL.
+
+- Tagged build (`"vX.Y.Z"`, `vcs.modified` false):
+  ```
+  stoa version v0.1.1
+  https://github.com/stoicknight/stoa/releases/tag/v0.1.1
+  ```
+- Tagged with dirty tree (`vcs.modified` true):
+  ```
+  stoa version v0.1.1+dirty
+  https://github.com/stoicknight/stoa/releases/tag/v0.1.1
+  ```
+- Local build with stamps (built inside a git checkout):
+  ```
+  stoa version (devel) (commit 1a2b3c4, built 2025-06-01 10:00:12 UTC, modified)
+  https://github.com/stoicknight/stoa/commit/<full-40-char-sha>
+  ```
+  Omit clauses of the parenthetical whose stamps are absent: without
+  `vcs.time` drop the `built` clause, without `vcs.modified=true` drop
+  `modified`; the `commit` clause is dropped together with the URL line
+  when `vcs.revision` is absent (e.g. binary built outside a git
+  checkout → single line `stoa version (devel)`).
+- `bi == nil` → single line `stoa version (unknown)` (defensive;
+  ReadBuildInfo practically never returns nil).
+
+Notes:
+- Line 2 for tagged installs is the GitHub release URL; for devel
+  builds with a revision it is the commit URL. The host/repo base is
+  derived from `bi.Main.Path` (`github.com/stoicknight/stoa`), not
+  hardcoded.
+- Tagged installs built through the module proxy (`go install
+  ...@v0.1.1`) carry no VCS stamps, so they never show `built`/`commit`
+  clauses — only the release URL line.
+- The `built` timestamp is `vcs.time` verbatim (RFC 3339 UTC), matching
+  what Go embeds.
 
 - `runVersion(args []string) error` — uses `fsBase("version")` so
   `--config` is accepted uniformly; stores `debug.ReadBuildInfo()` and
@@ -61,8 +97,10 @@ func versionString(bi *debug.BuildInfo) string
 
 - `internal/cli/version_test.go`:
   - Table-driven `TestVersionString` with synthetic `*debug.BuildInfo`
-    values covering the four shapes above (tag / tag+dirty / devel with
-    and without stamps / nil). Golden strings asserted exactly.
+    values covering the shapes above (tag / tag+dirty / devel full /
+    devel without time / devel without any stamps / nil). Golden
+    strings asserted exactly, including the 2-line layout and URL
+    derivation from `Main.Path`.
   - `TestVersionDispatch`: table over `Run(["version"])`,
     `Run(["--version"])` — both must return nil (not unknown-command);
     runVersion output is not captured (printing is trivial; the pure

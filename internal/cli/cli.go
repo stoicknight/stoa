@@ -6,8 +6,8 @@ import "fmt"
 // commands is the single source of truth for dispatch and usage output.
 var commands = []command{
 	{name: "init", summary: "create vault, config and empty index", run: runInit},
-	{name: "new", args: `<note|journal|doc> "title" [--tags=a,b]`, summary: "create a note and open $EDITOR", run: runNew},
-	{name: "edit", args: "<ref>", summary: "open a note in $EDITOR", run: runEdit},
+	{name: "new", args: `<note|journal|doc> "title" [--tags=a,b]`, summary: "create a note and open the configured editor", run: runNew},
+	{name: "edit", args: "<ref>", summary: "open a note in the configured editor", run: runEdit},
 	{name: "show", args: "<ref> [--path]", summary: "print a note (or its file path)", run: runShow},
 	{name: "list", args: "[--type=t] [--tag=t] [--limit=n]", summary: "list notes", run: runList},
 	{name: "search", args: "<terms>", summary: "substring search over titles, tags and bodies", run: runSearch},
@@ -15,7 +15,7 @@ var commands = []command{
 	{name: "backlinks", args: "<ref>", summary: "notes linking to ref", run: runBacklinks},
 	{name: "rm", args: "<ref>... [--yes] [--purge]", summary: "move to .trash (or delete with --purge)", run: runRemove},
 	{name: "reindex", summary: "rebuild the index from vault files", run: runReindex},
-	{name: "gen", args: "<file.md> [--pdf] [-o out] [--theme name] [--template path] [--watch]", summary: "generate a CV PDF from a markdown file (type: cv)", run: runGen},
+	{name: "gen", args: "<file.md> [--pdf] [-o out] [--theme name|.typ] [--watch]", summary: "generate a CV PDF from a markdown file (type: cv)", run: runGen},
 	{name: "config", args: "[key [value]]", summary: "show or set vault, editor, debug", run: runConfig},
 }
 

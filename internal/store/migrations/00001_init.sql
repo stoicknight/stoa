@@ -1,4 +1,7 @@
 -- +goose Up
+-- Foreign key enforcement is connection-level in SQLite, not schema
+-- level: store.Open sets it via the DSN (_pragma=foreign_keys(1)),
+-- making the ON DELETE CASCADE clauses below effective. See ADD-0003.
 CREATE TABLE notes (
     id      TEXT PRIMARY KEY,
     path    TEXT NOT NULL UNIQUE,

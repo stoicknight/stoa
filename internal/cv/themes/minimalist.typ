@@ -1,6 +1,6 @@
 // stoa "minimalist" theme — modern, minimalist, print-safe (no color
-// fills, works in B&W). The default for `stoa gen` is the "modern"
-// theme (themes/modern.typ); this file remains a built-in theme.
+// fills, works in B&W). The default for `stoa gen` is the "classic"
+// theme (themes/classic.typ); this file remains a built-in theme.
 // Data comes from data.yaml, the stable schema
 // produced by stoa's cv parser:
 //

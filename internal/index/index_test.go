@@ -40,7 +40,7 @@ func newVault(t *testing.T, files map[string]string) (*store.Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { st.Close() })
 	return st, vault
 }
 
@@ -132,6 +132,84 @@ func TestReindexRoundTrip(t *testing.T) {
 	}
 	if _, err := st.Q.GetNoteByID(ctx, idOne); err == nil {
 		t.Fatal("pruned note still present")
+	}
+}
+
+// TestReindexPruneCascades pins the foreign_keys contract: pruning a
+// deleted note's row must take its tag and link rows with it, both when
+// the note is the link source and when it is the link target.
+func TestReindexPruneCascades(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, vault := newVault(t, map[string]string{
+		"notes/first.md":  noteContent(idOne, "First", "note", []string{"pk"}, "see [[Second]]\n"),
+		"notes/second.md": noteContent(idTwo, "Second", "note", nil, "back to [[First]]\n"),
+	})
+	if _, err := Reindex(ctx, st, vault); err != nil {
+		t.Fatalf("first reindex: %v", err)
+	}
+	countRows := func(t *testing.T, query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := st.DB.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if got := countRows(t, `SELECT COUNT(*) FROM tags`); got != 1 {
+		t.Fatalf("tags before prune = %d, want 1", got)
+	}
+	if got := countRows(t, `SELECT COUNT(*) FROM links`); got != 2 {
+		t.Fatalf("links before prune = %d, want 2", got)
+	}
+
+	if err := os.Remove(filepath.Join(vault, "notes", "first.md")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Reindex(ctx, st, vault)
+	if err != nil {
+		t.Fatalf("reindex after removal: %v", err)
+	}
+	if res.Pruned != 1 {
+		t.Fatalf("pruned = %d, want 1", res.Pruned)
+	}
+	// note row and its children must be gone (ON DELETE CASCADE)
+	if got := countRows(t, `SELECT COUNT(*) FROM tags`); got != 0 {
+		t.Fatalf("tag rows left after prune = %d, want 0", got)
+	}
+	if got := countRows(t, `SELECT COUNT(*) FROM links WHERE source_id = ?`, idOne); got != 0 {
+		t.Fatalf("links sourced by pruned note = %d, want 0", got)
+	}
+	if got := countRows(t, `SELECT COUNT(*) FROM links WHERE target_id = ?`, idOne); got != 0 {
+		t.Fatalf("links targeting pruned note = %d, want 0", got)
+	}
+	// the surviving note's re-resolved link stays, now unresolved
+	if got := countRows(t, `SELECT COUNT(*) FROM links`); got != 1 {
+		t.Fatalf("links after prune = %d, want 1 (unresolved kept)", got)
+	}
+	if _, err := st.Q.GetNoteByID(ctx, idTwo); err != nil {
+		t.Fatalf("surviving note lost: %v", err)
+	}
+}
+
+// TestForeignKeysEnforced proves the pragma is live on every pooled
+// connection: child rows without a parent must be rejected.
+func TestForeignKeysEnforced(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, _ := newVault(t, nil)
+	if err := st.Q.InsertTag(ctx, dbx.InsertTagParams{NoteID: "ghost", Tag: "pk"}); err == nil {
+		t.Fatal("tag with unknown note_id: expected foreign-key violation")
+	}
+	if err := st.Q.InsertLink(ctx, dbx.InsertLinkParams{SourceID: "ghost", Target: "x", Kind: "ref"}); err == nil {
+		t.Fatal("link with unknown source_id: expected foreign-key violation")
+	}
+	var on int
+	if err := st.DB.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&on); err != nil {
+		t.Fatal(err)
+	}
+	if on != 1 {
+		t.Fatalf("PRAGMA foreign_keys = %d, want 1", on)
 	}
 }
 

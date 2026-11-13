@@ -54,17 +54,43 @@ func TestGenUsage(t *testing.T) {
 	}
 }
 
-func TestGenThemeAndTemplateConflict(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
+// writeCV is the minimal valid CV input shared by the gen error tests.
+func writeCV(t *testing.T, dir string) string {
+	t.Helper()
 	in := filepath.Join(dir, "cv.md")
 	content := "---\ntitle: Jane Doe\ntype: cv\nposition: Engineer\n---\n## Summary\nGo engineer.\n"
 	if err := os.WriteFile(in, []byte(content), 0o600); err != nil {
 		t.Fatalf("write input: %v", err)
 	}
-	err := runGen([]string{"--theme", "classic", "--template", "my.typ", in})
-	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("runGen(--theme + --template) = %v, want conflict error", err)
+	return in
+}
+
+// TestGenThemeTemplateFile pins the --theme resolution through runGen:
+// .typ paths select templates from disk (fail-fast before typst), and
+// unknown non-.typ values stay theme errors.
+func TestGenThemeTemplateFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := writeCV(t, dir)
+
+	err := runGen([]string{"--theme", filepath.Join(dir, "missing.typ"), in})
+	if err == nil || !strings.Contains(err.Error(), "missing.typ") {
+		t.Errorf("runGen(--theme missing.typ) = %v, want template-not-found error", err)
+	}
+
+	err = runGen([]string{"--theme", "nope", in})
+	if err == nil || !strings.Contains(err.Error(), "unknown theme") {
+		t.Errorf("runGen(--theme nope) = %v, want unknown-theme error", err)
+	}
+
+	// contract failure surfaces at selection, never as an empty PDF
+	bad := filepath.Join(dir, "nodata.typ")
+	if err := os.WriteFile(bad, []byte("= Hello world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = runGen([]string{"--theme", bad, in})
+	if err == nil || !strings.Contains(err.Error(), "data.yaml") {
+		t.Errorf("runGen(--theme nodata.typ) = %v, want contract error naming data.yaml", err)
 	}
 }
 

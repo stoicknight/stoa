@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	_ "modernc.org/sqlite"
 
@@ -22,30 +23,35 @@ type Store struct {
 	Q  *dbx.Queries
 }
 
+// gooseMu serializes access to goose's process-global setup state.
+var gooseMu sync.Mutex
+
 // Open opens (creating if needed) the SQLite file and applies migrations.
 func Open(ctx context.Context, path string) (*Store, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve db path: %w", err)
 	}
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", abs)
+	// foreign_keys must be set per connection (SQLite default: off); the
+	// _pragma DSN param applies it to every pooled connection, making the
+	// ON DELETE CASCADE clauses in the schema actually work.
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", abs)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
 	goose.SetBaseFS(migrations.FS)
-	goose.SetLogger(goose.NopLogger())
 	if err := goose.SetDialect("sqlite3"); err != nil {
-		_ = db.Close()
+		db.Close()
 		return nil, fmt.Errorf("goose dialect: %w", err)
 	}
 	if err := goose.UpContext(ctx, db, "."); err != nil {
-		_ = db.Close()
+		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return &Store{DB: db, Q: dbx.New(db)}, nil

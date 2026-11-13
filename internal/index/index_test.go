@@ -40,7 +40,7 @@ func newVault(t *testing.T, files map[string]string) (*store.Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { _ = st.Close() })
 	return st, vault
 }
 

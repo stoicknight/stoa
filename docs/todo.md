@@ -32,7 +32,6 @@ and the referenced code/docs; dates are when the fix landed.
 | 2026-11-12 | #25 (partial) docs drift pass: config precedence + defaults, `<ref>` resolution semantics, `.trash` wording, Development section | this pass | `README.md` |
 | 2026-11-12 | #26 ADD convention resolved — `docs/decisions/README.md` index (option a) | this pass | [docs/decisions/README.md](decisions/README.md) |
 | 2026-11-12 | theme/template doc — superseded by the template contract doc | `2471421` | [docs/reference/cv-template.md](reference/cv-template.md) |
-| 2026-11-12 | #26 ADD convention — resolved as option (a): decisions index | this pass | [docs/decisions/README.md](decisions/README.md) |
 | 2026-11-16 | cover letters: `stoa gen` dispatches on frontmatter type (`cv` \| `letter`); renderer unified into `internal/render` (renderer.go/cv.go/letter.go), inline converter moved to `internal/markdown`, new built-in `letter` theme | this pass | `internal/render/`, [docs/reference/letter-template.md](reference/letter-template.md) |
 
 ---
@@ -75,9 +74,10 @@ and the referenced code/docs; dates are when the fix landed.
 - **Where:** `internal/index/collect` + `internal/domain.ParseNoteType` +
   migration 1's `CHECK (type IN ('note','journal','doc'))`
 - `stoa gen` explicitly works on "any markdown file", and
-  `examples/cv-example.md` carries `type: cv`. `stoa new` cannot create
-  cv notes, but users *will* drop CV notes into the vault (it's a notes
-  tool). `collect` then fails the whole walk with
+  `examples/cv-example.md` / `examples/letter-example.md` carry
+  `type: cv` / `type: letter`. `stoa new` cannot create these note
+  types, but users *will* drop CV and letter notes into the vault (it's
+  a notes tool). `collect` then fails the whole walk with
   `unknown note type "cv"`, so tags/search/list go dead until the file is
   removed by hand.
 - **Fix:** decide the policy explicitly. Minimal: allow `type: cv` end to
@@ -106,7 +106,7 @@ and the referenced code/docs; dates are when the fix landed.
   `STOA_VAULT`/`--config`. The `newVault` helper in `index_test` is a
   ready-made pattern to crib.
 
-### 7. `domain`, `store`, `markdown` (parts), `cv` helpers lack tests
+### 7. `domain`, `store`, `markdown` (parts), `render` helpers lack tests
 
 - `domain.ParseNoteType`/`Folder` — perfect table-driven target, zero
   tests, package currently shows `[no test files]`.
@@ -121,10 +121,11 @@ and the referenced code/docs; dates are when the fix landed.
   `[]`" bug), BOM, tag `#`-strip mismatch between new (`--tags=#a` is
   NOT stripped — check `runNew` → `New` path) and reindex
   (`#a` IS stripped in `parseTagList`).
-- `cv` — `stripMarkup`, `splitOrgLine` en-dash-only case, `emph`/`bold`
-  unmatched-marker branches have direct unit tests only via `inline`
-  partials; schema `YAML()` empty-section emission ("text" always
-  emitted) is fine but untested for an empty CV.
+- `render` — `stripMarkup`, `splitOrgLine` en-dash-only case have unit
+  coverage only via parse tests (`emph`/`bold` moved to
+  `internal/markdown` and are fully pinned there); CV `YAML()`
+  empty-section emission ("text" always emitted) is fine but untested
+  for an empty CV.
 
 ### 8. Search: name lies, wildcards leak, truncation is silent
 
@@ -234,7 +235,7 @@ and the referenced code/docs; dates are when the fix landed.
 - `Config` has 3 fields but the config layer pulls in koanf + TOML
   parser + providers (five imports). A ~40-line hand-rolled TOML-flat
   read/write (you already wrote the same thing twice: `frontmatter` and
-  `cv.parseFrontmatter`) covers vault/editor/debug, drops two direct
+  `render.parseFrontmatter`) covers vault/editor/debug, drops two direct
   deps and matches the rest of the codebase's "restricted flat parser"
   philosophy. Alternatively keep koanf but drop the providers you don't
   use. Also `_ = k.Unmarshal(...)` silently swallows malformed values —
@@ -289,7 +290,7 @@ written schema
   date") render fine, but `shortDate("2026-01")` returns "2026-01", a
   range is "2026"... acceptable; keep, but comment it or parse to a
   `time.Time` at the boundary instead.
-- `cv.escapeMarkup` escapes **every** `~`, not just leading-position
+- `markdown.escapeMarkup` escapes **every** `~`, not just leading-position
   list/heading markers. The leading-marker block (`i == 0` switch over
   `- + = / ~`) is redundant with the main switch for `~`, so the intent
   (neutralize leading markers only) is lost and strings like
@@ -366,9 +367,9 @@ afternoon-sized chunks.
    out-of-top-10 resolution, prefix ties, ambiguity message limit.
 2. `link`: keep frontmatter verbatim (targeted body splice) or
    round-trip-preserving renderer (#3, #15). Test: unknown keys survive.
-3. Policy + plumbing for `type: cv` inside the vault (#4): domain entry +
-   migration (CHECK widening) + collect/FTS decision. Test: vault with a
-   cv note still reindexes.
+3. Policy + plumbing for `type: cv` / `type: letter` inside the vault
+   (#4): domain entry + migration (CHECK widening) + collect/FTS
+   decision. Test: vault with a cv or letter note still reindexes.
 4. `rm`: collision-safe trash names, partial-failure reporting (#9).
 5. Unify command scaffolding (#20) — mechanical refactor unlocking tests.
 6. CLI test battery (#6): per-command table-driven tests against temp

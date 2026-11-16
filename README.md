@@ -10,7 +10,7 @@ fully rebuildable index (`stoa reindex`). Edit files with nvim, `vim`, whatever
 ## Install
 
 Requires [Go](https://go.dev/) 1.27+ (and [Typst](https://typst.app) only for
-`stoa gen`, the CV/cover-letter PDF preview ... TODO check).
+`stoa gen`, the CV/cover-letter PDF preview).
 
 ```sh
 # latest release

@@ -1,4 +1,4 @@
-package cv
+package render
 
 import (
 	"bufio"
@@ -24,14 +24,19 @@ var classicTemplate string
 //go:embed themes/modern.typ
 var modernTemplate string
 
+//go:embed themes/letter.typ
+var letterTemplate string
+
 // themes maps theme names to embedded templates. The templates are
 // self-contained (no external Typst packages): classic and modern
 // reimplement rendercv 0.3.0's classic and engineeringresumes looks
-// against stoa's data.yaml schema; minimalist is stoa's own design.
+// against stoa's data.yaml schema; minimalist is stoa's own design;
+// letter is the DIN 5008-style cover letter.
 var themes = map[string]string{
-	"classic":    classicTemplate, // default
+	"classic":    classicTemplate, // default for CVs
 	"modern":     modernTemplate,
 	"minimalist": minimalistTemplate,
+	"letter":     letterTemplate, // default for cover letters
 }
 
 // themeNames returns the valid theme names, sorted for stable error
@@ -43,6 +48,15 @@ func themeNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// DefaultTheme returns the built-in theme used when --theme is not
+// given, resolved by document kind ("cv" or "letter").
+func DefaultTheme(kind string) string {
+	if kind == "letter" {
+		return "letter"
+	}
+	return "classic"
 }
 
 // Renderer owns the temporary Typst workspace: data.yaml plus the active
@@ -57,9 +71,10 @@ type Renderer struct {
 }
 
 // NewTheme sets up the workspace with the given look. spec is either a
-// built-in theme name (classic | modern | minimalist) or the path to a
-// user-provided .typ file — the escape hatch for full control over the
-// layout (see docs/reference/cv-template.md for the template contract).
+// built-in theme name (classic | modern | minimalist | letter) or the
+// path to a user-provided .typ file — the escape hatch for full control
+// over the layout (see docs/reference/cv-template.md and
+// docs/reference/letter-template.md for the template contract).
 func NewTheme(spec string) (*Renderer, error) {
 	if tmpl, ok := themes[spec]; ok {
 		return newWorkspace([]byte(tmpl), fmt.Sprintf("built-in theme %q", spec))
@@ -75,7 +90,7 @@ func NewTheme(spec string) (*Renderer, error) {
 }
 
 // newWorkspace creates the temp directory, checks for a typst binary
-// (with an install hint), validates the template against the stoa CV
+// (with an install hint), validates the template against the stoa
 // contract, and writes the template into it. src labels the template's
 // origin (user path or built-in theme) in typst diagnostics.
 func newWorkspace(tmpl []byte, src string) (*Renderer, error) {
@@ -105,7 +120,7 @@ func newWorkspace(tmpl []byte, src string) (*Renderer, error) {
 }
 
 // validateTemplate fails fast on templates that would compile clean but
-// silently render an empty document: the stoa CV contract requires the
+// silently render an empty document: the stoa contract requires the
 // template to load the schema itself via yaml("data.yaml").
 func validateTemplate(tmpl []byte) error {
 	if len(strings.TrimSpace(string(tmpl))) == 0 {
@@ -124,8 +139,8 @@ func (r *Renderer) Close() error {
 
 // WriteData writes the schema into the workspace (and refreshes it in
 // watch mode; typst watch recompiles when the file changes).
-func (r *Renderer) WriteData(c *CV) error {
-	if err := os.WriteFile(r.dataFile, []byte(c.YAML()), 0o600); err != nil {
+func (r *Renderer) WriteData(d Doc) error {
+	if err := os.WriteFile(r.dataFile, []byte(d.YAML()), 0o600); err != nil {
 		return fmt.Errorf("write data.yaml: %w", err)
 	}
 	return nil
@@ -137,10 +152,10 @@ func SchemaPath(out string) string {
 	return strings.TrimSuffix(out, filepath.Ext(out)) + ".yaml"
 }
 
-// Compile renders the CV to out in one shot. It also writes the schema
-// YAML next to the PDF as a preview/debug artifact.
-func (r *Renderer) Compile(ctx context.Context, c *CV, out string) error {
-	if err := r.WriteData(c); err != nil {
+// Compile renders the document to out in one shot. It also writes the
+// schema YAML next to the PDF as a preview/debug artifact.
+func (r *Renderer) Compile(ctx context.Context, d Doc, out string) error {
+	if err := r.WriteData(d); err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, r.typst, "compile", "--root", r.tmp, r.tmplFile, out)
@@ -152,7 +167,7 @@ func (r *Renderer) Compile(ctx context.Context, c *CV, out string) error {
 		return fmt.Errorf("typst compile: %w\n%s", err, relabel(trimFontWarnings(stderr.String()), r))
 	}
 	schema := SchemaPath(out)
-	if err := os.WriteFile(schema, []byte(c.YAML()), 0o600); err != nil {
+	if err := os.WriteFile(schema, []byte(d.YAML()), 0o600); err != nil {
 		return fmt.Errorf("write schema %s: %w", schema, err)
 	}
 	return nil

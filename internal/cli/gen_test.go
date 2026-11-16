@@ -128,3 +128,54 @@ func TestGenBadCV(t *testing.T) {
 		t.Errorf("runGen(bad cv) = %v, want parse error", err)
 	}
 }
+
+// TestGenLetterEndToEnd renders a cover letter through the real typst
+// binary with the default letter theme and asserts the PDF and the
+// sibling schema YAML exist.
+func TestGenLetterEndToEnd(t *testing.T) {
+	if _, err := exec.LookPath("typst"); err != nil {
+		t.Skip("typst not installed (run: sudo pacman -S typst)")
+	}
+
+	dir := t.TempDir()
+	in := filepath.Join(dir, "letter.md")
+	content := "---\ntitle: Jane Doe\ntype: letter\nlocation: Berlin, Germany\nemail: jane@example.com\ncompany: Acme\nsubject: Re: Application\n---\nDear Hiring Manager,\n\nI am writing about **the role**.\n\nYours sincerely,\n"
+	if err := os.WriteFile(in, []byte(content), 0o600); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	if err := runGen([]string{in}); err != nil {
+		t.Fatalf("runGen() error = %v", err)
+	}
+
+	wantPDF := filepath.Join(dir, "letter.pdf")
+	raw, err := os.ReadFile(wantPDF)
+	if err != nil {
+		t.Fatalf("read %s: %v", wantPDF, err)
+	}
+	if string(raw[:4]) != "%PDF" {
+		t.Errorf("%s is not a PDF", wantPDF)
+	}
+	schema, err := os.ReadFile(filepath.Join(dir, "letter.yaml"))
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	for _, want := range []string{`name: "Jane Doe"`, `company: "Acme"`, `subject: "Re: Application"`} {
+		if !strings.Contains(string(schema), want) {
+			t.Errorf("schema missing %q in:\n%s", want, schema)
+		}
+	}
+}
+
+func TestGenBadType(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := filepath.Join(dir, "note.md")
+	if err := os.WriteFile(in, []byte("---\ntitle: x\ntype: memo\n---\nhello\n"), 0o600); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	err := runGen([]string{in})
+	if err == nil || !strings.Contains(err.Error(), "type must be cv or letter") {
+		t.Errorf("runGen(type: memo) = %v, want unknown-type error", err)
+	}
+}

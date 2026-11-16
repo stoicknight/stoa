@@ -1,4 +1,4 @@
-package cv
+package render
 
 import (
 	"context"
@@ -21,10 +21,7 @@ func TestRenderOneShot(t *testing.T) {
 	t.Parallel()
 	requireTypst(t)
 
-	c, err := Parse(sample)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
+	c := parseCVTest(t, sample)
 	dir := t.TempDir()
 	out := filepath.Join(dir, "cv.pdf")
 
@@ -58,10 +55,7 @@ func TestRenderThemesCompile(t *testing.T) {
 	t.Parallel()
 	requireTypst(t)
 
-	c, err := Parse(sample)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
+	c := parseCVTest(t, sample)
 	for _, name := range []string{"modern", "minimalist"} { // classic is covered by TestRenderOneShot
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -189,10 +183,7 @@ func TestRenderCustomTemplate(t *testing.T) {
 	t.Parallel()
 	requireTypst(t)
 
-	c, err := Parse("---\ntitle: T\ntype: cv\n---\n## A\n- b\n")
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
+	c := parseCVTest(t, "---\ntitle: T\ntype: cv\n---\n## A\n- b\n")
 	dir := t.TempDir()
 	tmpl := filepath.Join(dir, "custom.typ")
 	if err := os.WriteFile(tmpl, []byte("#let data = yaml(\"data.yaml\")\nHello #data.name"), 0o600); err != nil {
@@ -229,5 +220,54 @@ func TestNewRendererMissingTypst(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "typst CLI not found") {
 		t.Errorf("error = %q, want install hint", err)
+	}
+}
+
+func TestRenderLetterOneShot(t *testing.T) {
+	t.Parallel()
+	requireTypst(t)
+
+	l := parseLetterTest(t, letterSample)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "letter.pdf")
+
+	r, err := NewTheme("letter") // the default letter theme
+	if err != nil {
+		t.Fatalf("NewTheme() error = %v", err)
+	}
+	defer func() { _ = r.Close() }()
+
+	if err := r.Compile(context.Background(), l, out); err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if len(raw) < 4 || string(raw[:4]) != "%PDF" {
+		t.Errorf("output is not a PDF (%d bytes, starts %q)", len(raw), raw[:min(8, len(raw))])
+	}
+	schema, err := os.ReadFile(SchemaPath(out))
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	for _, want := range []string{`name: "Alexis Skouris"`, `company: "Wrike"`, `attn: "Dmitrii Vlasov - SysOps Team Lead"`} {
+		if !strings.Contains(string(schema), want) {
+			t.Errorf("schema artifact missing %q", want)
+		}
+	}
+}
+
+func TestDefaultTheme(t *testing.T) {
+	t.Parallel()
+	if got := DefaultTheme("cv"); got != "classic" {
+		t.Errorf("DefaultTheme(cv) = %q, want classic", got)
+	}
+	if got := DefaultTheme("letter"); got != "letter" {
+		t.Errorf("DefaultTheme(letter) = %q, want letter", got)
+	}
+	if got := DefaultTheme("whatever"); got != "classic" {
+		t.Errorf("DefaultTheme(unknown kind) = %q, want the cv default", got)
 	}
 }

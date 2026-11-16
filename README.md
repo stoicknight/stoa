@@ -10,7 +10,7 @@ fully rebuildable index (`stoa reindex`). Edit files with nvim, `vim`, whatever
 ## Install
 
 Requires [Go](https://go.dev/) 1.27+ (and [Typst](https://typst.app) only for
-`stoa gen`, the CV PDF preview ... TODO check).
+`stoa gen`, the CV/cover-letter PDF preview ... TODO check).
 
 ```sh
 # latest release
@@ -52,7 +52,7 @@ edits, sorts chronologically.
 | `stoa backlinks <ref>` | which notes link to ref |
 | `stoa rm <ref>... [--yes] [--purge]` | move to `.trash` (or delete) |
 | `stoa reindex` | rebuild the index from files |
-| `stoa gen <file.md> [--pdf] [-o out] [--theme name\|.typ] [--watch]` | generate a CV PDF from a markdown file (type: cv) |
+| `stoa gen <file.md> [--pdf] [-o out] [--theme name\|.typ] [--watch]` | generate a CV or cover letter PDF from a markdown file (type: cv \| letter) |
 | `stoa config [key [value]]` | show or set `vault`/`editor`/`debug` |
 
 `<ref>` accepts an id, an id prefix, a title, a file name, or a vault-relative
@@ -109,6 +109,9 @@ Architecture decisions live in [docs/decisions/](docs/decisions/) — one file
 per decision (ADD-NNNN-*.md): status, context, decision, consequences. Agents
 must read the relevant ADD before proposing related changes; decisions are
 re-opened only by the user's explicit request.
+
+Template contracts for `stoa gen`: [CV](docs/reference/cv-template.md) and
+[cover letter](docs/reference/letter-template.md).
 
 ## Roadmap (not in MVP)
 

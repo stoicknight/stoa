@@ -1,13 +1,14 @@
-package cv
+package markdown
 
 import "strings"
 
-// inline converts restricted markdown inline markup to Typst markup:
+// Inline converts restricted markdown inline markup to Typst markup:
 // **strong** → #strong[...], *emphasis* → _..._, `code` → #raw("...")
 // and [text](url) → #link(...). Everything else is escaped so Typst
-// renders it literally. Nesting is deliberately unsupported (no
-// bold inside links etc.) to keep the converter small and predictable;
-func inline(s string) string {
+// renders it literally. Nesting is deliberately unsupported (no bold
+// inside links etc.) to keep the converter small and predictable;
+// documents are evaluated as fixed schemas, not as free markdown.
+func Inline(s string) string {
 	var b strings.Builder
 	rest := s
 	for rest != "" {
@@ -24,7 +25,7 @@ func inline(s string) string {
 }
 
 // cutLink finds the first [text](url). Brackets inside the text or the
-// URL are not supported (escaped input is rare in CVs; predictability
+// URL are not supported (escaped input is rare in notes; predictability
 // wins). Returns the text before the link, the link text, the URL and
 // the remainder after the link.
 func cutLink(s string) (prefix, text, url, after string, ok bool) {

@@ -9,26 +9,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stoicknight/stoa/internal/cv"
+	"github.com/stoicknight/stoa/internal/render"
 )
 
 // schemaFor writes the parsed schema YAML next to the PDF output so the
 // data boundary stays inspectable (MVP testing/preview artifact).
-func schemaFor(out string, c *cv.CV) error {
-	if err := os.WriteFile(cv.SchemaPath(out), []byte(c.YAML()), 0o600); err != nil {
+func schemaFor(out string, d render.Doc) error {
+	if err := os.WriteFile(render.SchemaPath(out), []byte(d.YAML()), 0o600); err != nil {
 		return fmt.Errorf("write schema: %w", err)
 	}
 	return nil
 }
 
-// runGen renders a CV markdown file to PDF (Typst). It works on any
-// markdown file — no vault needed — and keeps the parsed schema YAML
-// next to the PDF as a preview/debug artifact.
+// runGen renders a stoa markdown file to PDF (Typst): type: cv for CVs,
+// type: letter for cover letters. It works on any markdown file — no
+// vault needed — and keeps the parsed schema YAML next to the PDF as a
+// preview/debug artifact.
 func runGen(args []string) error {
 	fs := fsBase("gen")
 	outPath := fs.StringP("out", "o", "", "output PDF path (default: next to the input file)")
 	pdf := fs.Bool("pdf", false, "output format; PDF is currently the only one (and the default)")
-	theme := fs.String("theme", "classic", "built-in theme (classic | modern | minimalist) or a custom .typ template")
+	theme := fs.String("theme", "", "built-in theme (classic | modern | minimalist | letter) or a custom .typ template (default: classic for CVs, letter for cover letters)")
 	watch := fs.Bool("watch", false, "re-render when the input file changes")
 	_ = pdf // future formats branch on this; pdf is the only one today
 	if err := fs.Parse(args); err != nil {
@@ -44,7 +45,7 @@ func runGen(args []string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", input, err)
 	}
-	c, err := cv.Parse(string(raw))
+	d, err := render.Parse(string(raw))
 	if err != nil {
 		return failf("gen %s: %v", input, err)
 	}
@@ -58,16 +59,20 @@ func runGen(args []string) error {
 		ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
 	}
 
-	r, err := cv.NewTheme(*theme)
+	themeName := *theme
+	if themeName == "" {
+		themeName = render.DefaultTheme(d.Kind())
+	}
+	r, err := render.NewTheme(themeName)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = r.Close() }()
 
 	if *watch {
-		return watchGen(ctx, r, c, input, out)
+		return watchGen(ctx, r, d, input, out)
 	}
-	if err := r.Compile(ctx, c, out); err != nil {
+	if err := r.Compile(ctx, d, out); err != nil {
 		return failf("gen %s: %v", input, err)
 	}
 	fmt.Printf("generated %s\n", out)
@@ -77,11 +82,11 @@ func runGen(args []string) error {
 // watchGen runs typst watch on the workspace and re-parses the input
 // markdown whenever it changes, rewriting the schema file so Typst
 // recompiles automatically. Polling (mtime, 1s) keeps it stdlib-only.
-func watchGen(ctx context.Context, r *cv.Renderer, c *cv.CV, input, out string) error {
-	if err := r.WriteData(c); err != nil {
+func watchGen(ctx context.Context, r *render.Renderer, d render.Doc, input, out string) error {
+	if err := r.WriteData(d); err != nil {
 		return failf("gen %s: %v", input, err)
 	}
-	if err := schemaFor(out, c); err != nil {
+	if err := schemaFor(out, d); err != nil {
 		return failf("gen %s: %v", input, err)
 	}
 	watchErr := make(chan error, 1)
@@ -115,7 +120,7 @@ func watchGen(ctx context.Context, r *cv.Renderer, c *cv.CV, input, out string) 
 				fmt.Fprintln(os.Stderr, "stoa:", err)
 				continue
 			}
-			updated, err := cv.Parse(string(raw))
+			updated, err := render.Parse(string(raw))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "stoa: gen: %v\n", err)
 				continue

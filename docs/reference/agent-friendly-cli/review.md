@@ -118,7 +118,7 @@ stoa already matches the talk better than average (TTY check in `internal/cli/tt
 
 - `internal/cli/tty_other.go` — confirm the non-Linux path is `term.IsTerminal` (stdlib `x/term`), not just build-tag drift.
 - `stoa gen --watch` error output currently uses `stoa:` stderr prefix — keep diagnostics there, but make sure the *first* error also sets a non-zero exit at the end of the run.
-- Add `go:embed`-style bundling thinking for any future asset (themes already live in `internal/cv/themes/` — good, single binary holds).
+- Add `go:embed`-style bundling thinking for any future asset (themes already live in `internal/render/themes/` — good, single binary holds).
 - Exit codes: consider distinguishing "usage error" (2) from "operation failed" (1) so agents can retry differently.
 
 ---

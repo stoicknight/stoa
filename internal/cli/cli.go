@@ -15,7 +15,7 @@ var commands = []command{
 	{name: "backlinks", args: "<ref>", summary: "notes linking to ref", run: runBacklinks},
 	{name: "rm", args: "<ref>... [--yes] [--purge]", summary: "move to .trash (or delete with --purge)", run: runRemove},
 	{name: "reindex", summary: "rebuild the index from vault files", run: runReindex},
-	{name: "gen", args: "<file.md> [--pdf] [-o out] [--theme name|.typ] [--watch]", summary: "generate a CV PDF from a markdown file (type: cv)", run: runGen},
+	{name: "gen", args: "<file.md> [--pdf] [-o out] [--theme name|.typ] [--watch]", summary: "generate a CV or cover letter PDF (type: cv | letter)", run: runGen},
 	{name: "config", args: "[key [value]]", summary: "show or set vault, editor, debug", run: runConfig},
 }
 

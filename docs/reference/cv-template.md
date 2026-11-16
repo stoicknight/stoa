@@ -2,7 +2,7 @@
 
 `stoa gen --theme <file>.typ` renders a CV with a user-provided Typst
 template. The template replaces stoa's built-in themes
-(`internal/cv/themes/*.typ` — read them for working examples).
+(`internal/render/themes/*.typ` — read them for working examples; the cover-letter contract lives in [letter-template.md](letter-template.md)).
 
 ## Requirements
 
@@ -29,7 +29,7 @@ template. The template replaces stoa's built-in themes
 
 ## Schema (`data.yaml`)
 
-Source of truth: `internal/cv/yaml.go`.
+Source of truth: `internal/render/cv.go`.
 
 | field | shape |
 |---|---|

@@ -1,16 +1,11 @@
-// Package cv parses CV-type markdown notes into a fixed schema and renders
-// them to PDF through the Typst CLI.
-//
-// The schema (CV) is the stability boundary between source and output:
-// reformatting a CV means writing a new Typst template against the same
-// schema — no Go changes. All text fields hold Typst markup produced by
-// the inline converter; templates evaluate them with eval().
-package cv
+package render
 
 import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/stoicknight/stoa/internal/markdown"
 )
 
 // Contact is one frontmatter contact rendered in the header line.
@@ -47,25 +42,21 @@ type CV struct {
 	Sections []Section // in file order
 }
 
+// Kind implements Doc.
+func (c *CV) Kind() string { return "cv" }
+
 const (
 	kindParagraph = "paragraph"
 	kindBullets   = "bullets"
 	kindEntries   = "entries"
 )
 
-// Parse converts a CV markdown note into the schema. The input must follow
-// the restricted CV format (see README): flat frontmatter with type: cv,
+// parseCV converts CV frontmatter plus body into the schema. The input
+// must follow the restricted CV format (see README): flat frontmatter,
 // then "## Section" blocks whose entries are "### Heading" plus an
 // organization line, an optional date line, and "- " bullets. Anything
 // else is an error naming the line number.
-func Parse(content string) (*CV, error) {
-	keys, body, baseLine, err := parseFrontmatter(content)
-	if err != nil {
-		return nil, err
-	}
-	if !strings.EqualFold(keys["type"], "cv") {
-		return nil, fmt.Errorf("not a CV note: frontmatter must contain type: cv")
-	}
+func parseCV(keys map[string]string, body string, baseLine int) (*CV, error) {
 	c := &CV{Position: strings.TrimSpace(keys["position"])}
 	c.Name = strings.TrimSpace(keys["title"])
 	if c.Name == "" {
@@ -73,41 +64,12 @@ func Parse(content string) (*CV, error) {
 	}
 	c.Contacts = buildContacts(keys)
 	if strings.TrimSpace(body) != "" {
-		c.Sections, err = parseSections(body, baseLine)
-		if err != nil {
+		var err error
+		if c.Sections, err = parseSections(body, baseLine); err != nil {
 			return nil, err
 		}
 	}
 	return c, nil
-}
-
-// parseFrontmatter splits the flat "key: value" block off the body. Only
-// flat scalars are supported, mirroring internal/frontmatter's philosophy.
-// It returns the 1-based source line of the first body line.
-func parseFrontmatter(content string) (keys map[string]string, body string, baseLine int, err error) {
-	trimmed := strings.TrimLeft(content, "\ufeff")
-	lines := strings.Split(trimmed, "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, "", 0, fmt.Errorf("missing frontmatter block (--- ... ---)")
-	}
-	keys = map[string]string{}
-	end := -1
-	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "---" {
-			end = i
-			break
-		}
-		k, v, ok := strings.Cut(line, ":")
-		if !ok {
-			return nil, "", 0, fmt.Errorf("frontmatter line %d: not a flat \"key: value\" scalar: %q", i+1, line)
-		}
-		keys[strings.TrimSpace(k)] = strings.TrimSpace(v)
-	}
-	if end < 0 {
-		return nil, "", 0, fmt.Errorf("frontmatter block not closed (--- ... ---)")
-	}
-	return keys, strings.Join(lines[end+1:], "\n"), end + 2, nil
 }
 
 // contactOrder fixes the header contact order: location first, then
@@ -304,7 +266,7 @@ func (r *rawSection) section() (Section, error) {
 	case r.hasBullet:
 		s.Kind = kindBullets
 		for _, l := range r.lines {
-			s.Bullets = append(s.Bullets, inline(l.text))
+			s.Bullets = append(s.Bullets, markdown.Inline(l.text))
 		}
 		return s, nil
 	default:
@@ -313,7 +275,7 @@ func (r *rawSection) section() (Section, error) {
 			if s.Text != "" {
 				s.Text += " "
 			}
-			s.Text += inline(l.text)
+			s.Text += markdown.Inline(l.text)
 		}
 		return s, nil
 	}
@@ -331,11 +293,11 @@ func (r *rawSection) firstStrayLine() int {
 // entry classifies the lines of one raw entry into org/location, date
 // range, bullets and details.
 func (e *rawEntry) entry() (Entry, error) {
-	out := Entry{Title: inline(e.title)}
+	out := Entry{Title: markdown.Inline(e.title)}
 	for _, l := range e.lines {
 		switch {
 		case l.kind == "bullet":
-			out.Bullets = append(out.Bullets, inline(l.text))
+			out.Bullets = append(out.Bullets, markdown.Inline(l.text))
 		case strings.HasPrefix(l.text, "**") && strings.Contains(l.text, "**"):
 			if out.Organization != "" {
 				return out, fmt.Errorf("line %d: duplicate organization line", l.lineNo)
@@ -349,9 +311,9 @@ func (e *rawEntry) entry() (Entry, error) {
 			if out.DateRange != "" {
 				return out, fmt.Errorf("line %d: duplicate date range", l.lineNo)
 			}
-			out.DateRange = inline(stripMarkup(l.text))
+			out.DateRange = markdown.Inline(stripMarkup(l.text))
 		default:
-			out.Details = append(out.Details, inline(l.text))
+			out.Details = append(out.Details, markdown.Inline(l.text))
 		}
 	}
 	return out, nil
@@ -397,4 +359,89 @@ func stripMarkup(s string) string {
 		}
 	}
 	return strings.TrimSpace(s)
+}
+
+// YAML renders the CV schema as YAML — the stable data boundary the Typst
+// templates consume via yaml("data.yaml"), and the sibling artifact stoa
+// writes next to every PDF for preview/debugging. All scalars are emitted
+// as double-quoted YAML strings, so no value can break the structure.
+func (c *CV) YAML() string {
+	var b strings.Builder
+	b.WriteString("position: " + yamlString(c.Position) + "\n")
+	b.WriteString("name: " + yamlString(c.Name) + "\n")
+	b.WriteString("contacts:\n")
+	if len(c.Contacts) == 0 {
+		b.WriteString("  []\n")
+	}
+	for _, ct := range c.Contacts {
+		b.WriteString("  - label: " + yamlString(ct.Label) + "\n")
+		b.WriteString("    uri: " + yamlString(ct.URI) + "\n")
+	}
+	b.WriteString("sections:\n")
+	if len(c.Sections) == 0 {
+		b.WriteString("  []\n")
+	}
+	for _, s := range c.Sections {
+		b.WriteString("  - name: " + yamlString(s.Name) + "\n")
+		b.WriteString("    kind: " + yamlString(s.Kind) + "\n")
+		b.WriteString("    text: " + yamlString(s.Text) + "\n")
+		b.WriteString(yamlList("    ", s.Bullets))
+		b.WriteString("    entries:\n")
+		if len(s.Entries) == 0 {
+			b.WriteString("      []\n")
+		}
+		for _, e := range s.Entries {
+			b.WriteString("      - title: " + yamlString(e.Title) + "\n")
+			b.WriteString("        organization: " + yamlString(e.Organization) + "\n")
+			b.WriteString("        location: " + yamlString(e.Location) + "\n")
+			b.WriteString("        dateRange: " + yamlString(e.DateRange) + "\n")
+			b.WriteString(yamlList("        ", e.Bullets))
+			b.WriteString(yamlList("        ", e.Details, "details"))
+		}
+	}
+	return b.String()
+}
+
+// yamlList renders a named list at the given indent; empty lists become
+// "[]" so templates never see a missing key. Without a name (bullets in
+// the schema layout) the key is "bullets".
+func yamlList(indent string, items []string, names ...string) string {
+	name := "bullets"
+	if len(names) > 0 {
+		name = names[0]
+	}
+	if len(items) == 0 {
+		return indent + name + ": []\n"
+	}
+	var b strings.Builder
+	b.WriteString(indent + name + ":\n")
+	for _, item := range items {
+		b.WriteString(indent + "  - " + yamlString(item) + "\n")
+	}
+	return b.String()
+}
+
+// yamlString quotes s as a YAML double-quoted scalar, escaping quotes,
+// backslashes and control characters.
+func yamlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

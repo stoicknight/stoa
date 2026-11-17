@@ -51,8 +51,10 @@
 #v(0.9em, weak: false)
 
 // --- Body: the prose is the letter (salutation and closing included) ---
-// join(parbreak()) keeps each paragraph its own <par> so par.spacing applies
-#data.paragraphs.join(parbreak())
+// Paragraphs hold Typst markup from the inline converter — eval each so
+// the markup renders; join(parbreak()) keeps each paragraph its own
+// <par> so par.spacing applies.
+#data.paragraphs.map(p => eval(p, mode: "markup")).join(parbreak())
 
 // --- Sign-off gap + name ---
 #v(1cm, weak: true)

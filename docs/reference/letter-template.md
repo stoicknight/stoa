@@ -21,7 +21,9 @@ The rules are identical to the CV contract
 
 3. **`paragraphs` hold Typst markup.** stoa converts the note's inline
    markdown (`**bold**`, `*italic*`, `[text](url)`) to Typst markup; render
-   those strings with `eval(s, mode: "markup")`.
+   those strings with `eval(s, mode: "markup")`. Inserting a string
+   directly (`#data.paragraphs.join(...)`) renders it **literally** —
+   markup and escapes show as raw text (e.g. `Wrike\\'s`, `**bold**`).
 
 4. **Self-contained.** No external Typst packages; fonts must exist on
    the system or fall back gracefully.
@@ -46,8 +48,9 @@ template (the built-in theme filters them out).
   ordinary paragraphs the user writes; the template adds only the
   sign-off gap and the name after the last paragraph.
 - The date line is generated at compile time, not stored in the note.
-- Paragraph separation comes from paragraph spacing: join the list with
-  `parbreak()` so each string stays its own `<par>`.
+- Paragraph separation comes from paragraph spacing: eval each string
+  as markup and join the results with `parbreak()` so each paragraph
+  stays its own `<par>`.
 
 ## Minimal skeleton
 
@@ -77,7 +80,7 @@ template (the built-in theme filters them out).
 #text(weight: "bold")[#data.subject]
 #v(0.9em, weak: false)
 
-#data.paragraphs.join(parbreak())
+#data.paragraphs.map(p => eval(p, mode: "markup")).join(parbreak())
 
 #v(1cm, weak: true)
 #data.name
